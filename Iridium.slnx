@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/test/">
+    <Project Path="Iridium.Sample/Iridium.Sample.csproj" />
+  </Folder>
+  <Project Path="src/Iridium/Iridium.csproj" />
+</Solution>
