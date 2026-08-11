@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Folder Include="Extensions\" />
+      <Folder Include="Helpers\" />
+      <Folder Include="Launch\" />
+      <Folder Include="Models\Download\" />
+      <Folder Include="Models\Installation\" />
+      <Folder Include="Models\Instance\" />
+      <Folder Include="Models\Java\" />
+      <Folder Include="Models\Launch\" />
+      <Folder Include="Networking\" />
+      <Folder Include="Providers\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Flurl.Http" Version="4.0.2" />
+    </ItemGroup>
+
+</Project>
