@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Iridium.Models.Authentication.Microsoft;
 
-public record MinecraftPayload(string identityToken);
+public record MinecraftPayload(string IdentityToken);
 
 public record XblProperties {
     public required string SiteName { get; init; }

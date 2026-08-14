@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 namespace Iridium.Enums;
 
 public readonly struct MinecraftFormat(string id) : IEquatable<MinecraftFormat> {

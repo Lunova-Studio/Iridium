@@ -15,7 +15,7 @@ public sealed class YggdrasilAuthenticator(string url) {
             ClientToken = account.ClientToken,
             SelectedProfile = new SelectedProfile {
                 Name = account.Name,
-                Id = account.Uuid.ToString("N"),
+                Id = account.Uuid.ToString("N")
             }
         };
 
@@ -30,7 +30,7 @@ public sealed class YggdrasilAuthenticator(string url) {
             YggdrasilResponseContext.Default.YggdrasilResponse,
             cancellationToken);
         
-        var profile = entry.SelectedProfile;
+        var profile = entry!.SelectedProfile;
         return new YggdrasilAccount(profile.Name, Guid.Parse(profile.Id), entry.AccessToken, url, entry.ClientToken);
     }
     
@@ -39,7 +39,7 @@ public sealed class YggdrasilAuthenticator(string url) {
             ClientToken = Guid.NewGuid().ToString("N"),
             Username = email,
             Password = password,
-            RequestUser = false,
+            RequestUser = false
         };
 
         using var responseMessage = await url.AppendPathSegments("authserver", "authenticate")
@@ -52,7 +52,7 @@ public sealed class YggdrasilAuthenticator(string url) {
             YggdrasilResponseContext.Default.YggdrasilResponse,
             cancellationToken);
 
-        return entry.AvailableProfiles.Select(profile =>
+        return entry!.AvailableProfiles.Select(profile =>
             new YggdrasilAccount(profile.Name, Guid.Parse(profile.Id), entry.AccessToken, url, entry.ClientToken)) 
                 .ToList()
                 .AsReadOnly();

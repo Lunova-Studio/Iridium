@@ -2,6 +2,7 @@ using System.Text.Json;
 using Iridium.Enums;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Minecraft;
+using Iridium.Parsers.Minecraft;
 
 namespace Iridium.Providers.Minecraft;
 
@@ -55,19 +56,30 @@ internal sealed class StandardMinecraftProvider : IMinecraftProvider {
         if (string.IsNullOrWhiteSpace(id))
             id = dir.Name;
 
-        var loaders = root.TryGetProperty("libraries", out var libraries)
-            ? ModLoaderDetector.DetectFromLibraries(libraries)
+        var libraries = root.TryGetProperty("libraries", out var librariesElement)
+            ? VersionJsonParser.MapLibraries(librariesElement)
             : [];
-
-        var minecraftVersion = await ResolveVersionAsync(id, root, cancellationToken);
 
         return new MinecraftEntry {
             Id = id,
             Name = id,
-            MinecraftVersion = minecraftVersion,
-            Loaders = loaders,
+            MinecraftVersion = await ResolveVersionAsync(id, root, cancellationToken),
             InstancePath = dir.FullName,
-            Format = MinecraftFormat.Standard
+            Format = MinecraftFormat.Standard,
+            Loaders = ModLoaderDetector.DetectFromLibraries(librariesElement),
+            MainClass = root.TryGetProperty("mainClass", out var mainClass) ? mainClass.GetString() : null,
+            MinecraftArguments = root.TryGetProperty("minecraftArguments", out var minecraftArguments) ? minecraftArguments.GetString() : null,
+            Arguments = VersionJsonParser.MapArguments(root),
+            Jar = root.TryGetProperty("jar", out var jar) ? jar.GetString() : null,
+            AssetIndex = root.TryGetProperty("assetIndex", out var assetIndex)
+                && assetIndex.TryGetProperty("id", out var assetId)
+                && assetId.GetString() is { Length: > 0 } assetIndexId
+                ? new AssetIndex(assetIndexId)
+                : null,
+            Libraries = libraries,
+            InheritsFrom = root.TryGetProperty("inheritsFrom", out var inheritsFrom) ? inheritsFrom.GetString() : null,
+            Type = VersionJsonParser.MapType(root),
+            ReleaseTime = VersionJsonParser.MapReleaseTime(root)
         };
     }
 
@@ -76,9 +88,9 @@ internal sealed class StandardMinecraftProvider : IMinecraftProvider {
             return fallbackId;
 
         // Modded versions (Forge/Fabric/OptiFine...) inherit from the vanilla version JSON.
-        if (root.TryGetProperty("inheritsFrom", out var inherits) &&
-            inherits.GetString() is { Length: > 0 } parentId) {
+        if (root.TryGetProperty("inheritsFrom", out var inherits) && inherits.GetString() is { Length: > 0 } parentId) {
             var parentJsonPath = Path.Combine(_root.FullName, "versions", parentId, $"{parentId}.json");
+            
             if (File.Exists(parentJsonPath)) {
                 var parentJson = await File.ReadAllTextAsync(parentJsonPath, cancellationToken);
                 using var parentDocument = JsonDocument.Parse(parentJson);
@@ -93,15 +105,13 @@ internal sealed class StandardMinecraftProvider : IMinecraftProvider {
 
         // HMCL stores the real Minecraft version in the "game" patch.
         if (root.TryGetProperty("patches", out var patches) && patches.ValueKind == JsonValueKind.Array) {
-            var patchesElements = patches.EnumerateArray()
-                .Where(patch => patch.ValueKind == JsonValueKind.Object);
+            var patchesEnumerable = patches.EnumerateArray().Where(patch => patch.ValueKind == JsonValueKind.Object);
             
-            foreach (var patch in patchesElements) {
+            foreach (var patch in patchesEnumerable) {
                 if (!patch.TryGetProperty("id", out var patchId) || patchId.GetString() != "game")
                     continue;
 
-                if (patch.TryGetProperty("version", out var patchVersion) &&
-                    patchVersion.GetString() is { Length: > 0 } hmclVersion)
+                if (patch.TryGetProperty("version", out var patchVersion) && patchVersion.GetString() is { Length: > 0 } hmclVersion)
                     return hmclVersion;
             }
         }
