@@ -8,6 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\Iridium\Iridium.csproj" />
       <ProjectReference Include="..\src\Iridium\Iridium.csproj" />
     </ItemGroup>
 
