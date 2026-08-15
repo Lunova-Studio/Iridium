@@ -5,7 +5,7 @@ using Iridium.Enums;
 using Iridium.Interfaces.Launch;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Launch;
-using Iridium.Minecraft.Layout;
+using Iridium.Models.Java;
 using Iridium.Models.Launch;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Minecraft;

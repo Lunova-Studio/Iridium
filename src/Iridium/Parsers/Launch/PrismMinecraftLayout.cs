@@ -1,10 +1,9 @@
 using Iridium.Helpers;
-using Iridium.Interfaces;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Minecraft;
 
-namespace Iridium.Minecraft.Layout;
+namespace Iridium.Parsers.Launch;
 
 public sealed class PrismMinecraftLayout : IMinecraftLayout {
     public string GetInstanceRoot(MinecraftEntry entry) => entry.InstancePath;

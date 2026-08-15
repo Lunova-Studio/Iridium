@@ -1,5 +1,6 @@
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Authentication;
+using Iridium.Models.Java;
 using Iridium.Models.Minecraft;
 using Iridium.Providers;
 

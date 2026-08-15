@@ -1,5 +1,4 @@
 using Iridium.Interfaces.Minecraft;
-using Iridium.Minecraft.Layout;
 using Iridium.Models.Minecraft;
 
 namespace Iridium.Parsers.Launch;

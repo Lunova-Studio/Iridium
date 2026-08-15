@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using Iridium.Extensions;
 using Iridium.Interfaces.Launch;
-using Iridium.Minecraft.Layout;
 using Iridium.Models.Launch;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Launch;

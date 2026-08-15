@@ -9,11 +9,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Folder Include="Extensions\" />
       <Folder Include="Models\Download\" />
       <Folder Include="Models\Installation\" />
       <Folder Include="Models\Instance\" />
-      <Folder Include="Models\Java\" />
       <Folder Include="Networking\" />
     </ItemGroup>
 
