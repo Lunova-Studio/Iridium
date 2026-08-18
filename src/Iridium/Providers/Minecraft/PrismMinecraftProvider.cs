@@ -187,7 +187,7 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
         }
     }
 
-    private static IReadOnlyList<string> ReadTweakClasses(IReadOnlyList<MinecraftLibrary> libraries, string librariesRoot) {
+    private static List<string> ReadTweakClasses(IReadOnlyList<MinecraftLibrary> libraries, string librariesRoot) {
         var result = new List<string>();
         foreach (var library in libraries) {
             var path = MavenPathParser.Resolve(librariesRoot, library.Name);
@@ -263,7 +263,7 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
         return dir.Name;
     }
 
-    private static IReadOnlyList<string> GetInstanceTweakers(DirectoryInfo dir) {
+    private static string[] GetInstanceTweakers(DirectoryInfo dir) {
         var cfgPath = Path.Combine(dir.FullName, "instance.cfg");
         if (!File.Exists(cfgPath))
             return [];

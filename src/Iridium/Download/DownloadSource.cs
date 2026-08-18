@@ -5,11 +5,6 @@ namespace Iridium.Download;
 public sealed class DownloadSource {
     private readonly Func<DownloadFileEntry, string> _urlBuilder;
 
-    private DownloadSource(string name, Func<DownloadFileEntry, string> urlBuilder) {
-        Name = name;
-        _urlBuilder = urlBuilder;
-    }
-
     public string Name { get; }
 
     public static DownloadSource Official { get; } = new("Official", file => file.Type switch {
@@ -27,9 +22,14 @@ public sealed class DownloadSource {
         DownloadFileType.Asset => $"https://bmclapi2.bangbang93.com/assets/{file.Hash![..2]}/{file.Hash}",
         _ => throw new NotSupportedException($"Unsupported file type: {file.Type}")
     });
-
-    public static DownloadSource Create(string name, Func<DownloadFileEntry, string> urlBuilder)
-        => new(name, urlBuilder);
+    
+    private DownloadSource(string name, Func<DownloadFileEntry, string> urlBuilder) {
+        Name = name;
+        _urlBuilder = urlBuilder;
+    }
 
     public string GetUrl(DownloadFileEntry file) => _urlBuilder(file);
+    
+    public static DownloadSource Create(string name, Func<DownloadFileEntry, string> urlBuilder) =>
+        new(name, urlBuilder);
 }

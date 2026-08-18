@@ -25,13 +25,21 @@ public sealed class PrismMinecraftLayout : IMinecraftLayout {
         Path.Combine(entry.InstancePath, $"natives-{PlatformHelper.GetPlatformInfo()}");
 
     public string GetVersionJarPath(MinecraftEntry entry) {
-        // The client jar of a prism instance is the mainJar maven artifact resolved
-        // from the global library store.
         if (!string.IsNullOrEmpty(entry.Jar) && MavenPathParser.Resolve(GetLibrariesRoot(entry), entry.Jar) is { } jarPath)
             return jarPath;
 
         return Path.Combine(GetGameDirectory(entry), $"{entry.Id}.jar");
     }
+
+    public string GetGameDirectory(string id) => Path.Combine("instances", id, "minecraft");
+
+    public string GetNativesDirectory(string id) => Path.Combine("instances", id, $"natives-{PlatformHelper.GetPlatformInfo()}");
+
+    public string GetVersionJarPath(string id) => Path.Combine("instances", id, "minecraft", $"{id}.jar");
+
+    public string GetVersionJsonPath(string id) => Path.Combine("instances", id, "minecraft", "versions", id, $"{id}.json");
+
+    public string GetVersionJsonPath(MinecraftEntry entry) => Path.Combine(GetGameDirectory(entry), "versions", entry.Id, $"{entry.Id}.json");
 
     private static string GetPrismRoot(MinecraftEntry entry) {
         if (string.IsNullOrEmpty(entry.InstancePath))

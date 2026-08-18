@@ -30,6 +30,16 @@ public sealed class StandardMinecraftLayout : IMinecraftLayout {
         return Path.Combine(GetVersionDirectory(entry), $"{jarName}.jar");
     }
 
+    public string GetGameDirectory(string id) => Path.Combine("versions", id);
+
+    public string GetNativesDirectory(string id) => Path.Combine("versions", id, $"natives-{PlatformHelper.GetPlatformInfo()}");
+
+    public string GetVersionJarPath(string id) => Path.Combine("versions", id, $"{id}.jar");
+
+    public string GetVersionJsonPath(string id) => Path.Combine("versions", id, $"{id}.json");
+
+    public string GetVersionJsonPath(MinecraftEntry entry) => Path.Combine(GetRoot(entry), "versions", entry.Id, $"{entry.Id}.json");
+
     private static string GetVersionDirectory(MinecraftEntry entry) {
         return string.IsNullOrEmpty(entry.InstancePath) 
             ? entry.InstancePath 

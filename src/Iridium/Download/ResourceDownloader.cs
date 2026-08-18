@@ -132,11 +132,10 @@ public sealed class ResourceDownloader : IDisposable {
         IMinecraftLayout layout,
         CancellationToken cancellationToken) {
         var files = new List<DownloadFileEntry>(entry.Libraries.Count + 64);
-        var root = layout.GetInstanceRoot(entry);
         var librariesRoot = layout.GetLibrariesRoot(entry);
         var assetsRoot = layout.GetAssetsRoot(entry);
 
-        var versionJsonPath = Path.Combine(root, "versions", entry.Id, $"{entry.Id}.json");
+        var versionJsonPath = layout.GetVersionJsonPath(entry);
 
         if (!File.Exists(versionJsonPath))
             throw new InvalidOperationException(

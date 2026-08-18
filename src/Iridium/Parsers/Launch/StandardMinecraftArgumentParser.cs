@@ -17,7 +17,7 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
     private const string DefaultMainClass = "net.minecraft.client.main.Main";
     private static readonly DateTime QuickPlayFeatureCutoff = new(2023, 4, 4);
 
-    public virtual IMinecraftLayout CreateLayout(MinecraftEntry entry) => new StandardMinecraftLayout();
+    protected virtual IMinecraftLayout CreateLayout(MinecraftEntry entry) => new StandardMinecraftLayout();
 
     public LaunchArguments Build(MinecraftEntry entry, LaunchConfig config) {
         if (config.Account is null)

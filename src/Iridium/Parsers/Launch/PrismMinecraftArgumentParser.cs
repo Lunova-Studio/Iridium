@@ -9,6 +9,6 @@ namespace Iridium.Parsers.Launch;
 /// manifest-driven argument assembly is shared with the standard resolver.
 /// </summary>
 public sealed class PrismMinecraftArgumentParser : StandardMinecraftArgumentParser {
-    public override IMinecraftLayout CreateLayout(MinecraftEntry entry) => 
+    protected override IMinecraftLayout CreateLayout(MinecraftEntry entry) => 
         new PrismMinecraftLayout();
 }

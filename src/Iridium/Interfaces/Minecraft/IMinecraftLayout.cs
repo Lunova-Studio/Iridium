@@ -9,4 +9,10 @@ public interface IMinecraftLayout {
     string GetAssetsRoot(MinecraftEntry entry);
     string GetNativesDirectory(MinecraftEntry entry);
     string GetVersionJarPath(MinecraftEntry entry);
+
+    string GetGameDirectory(string id);
+    string GetNativesDirectory(string id);
+    string GetVersionJarPath(string id);
+    string GetVersionJsonPath(string id);
+    string GetVersionJsonPath(MinecraftEntry entry);
 }

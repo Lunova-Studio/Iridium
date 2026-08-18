@@ -8,11 +8,11 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Iridium.Download;
 
-internal static class DownloadManager {
-    public static int MaxThread { get; set; } = 128;
-    public static int MaxRetryCount { get; set; } = 3;
-    public static bool IsEnableFragment { get; set; } = true;
-}
+// internal static class DownloadManager {
+//     public static int MaxThread { get; set; } = 128;
+//     public static int MaxRetryCount { get; set; } = 3;
+//     public static bool IsEnableFragment { get; set; } = true;
+// }
 
 public sealed class DefaultDownloader : IDisposable {
     private const long MultipartThreshold = 16L * 1024 * 1024;
@@ -24,24 +24,22 @@ public sealed class DefaultDownloader : IDisposable {
     
     private readonly SemaphoreSlim _globalSemaphore;
     private readonly CancellationTokenSource _disposeCts;
+
+    private readonly bool _isEnableFragment;
     
     private readonly int _maxConcurrency;
     private readonly int _maxRetryCount;
     
     private int _disposed;
     
-    public DefaultDownloader(int maxConcurrency = 4) {
+    public DefaultDownloader(int maxConcurrency = 32, int maxRetryCount = 3, bool isEnableFragment = true) {
         if (maxConcurrency <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxConcurrency), maxConcurrency, 
                 "Max concurrency must be greater than zero.");
 
         _maxConcurrency = maxConcurrency;
-        _maxRetryCount = Math.Max(1, DownloadManager.MaxRetryCount);
-
-        /*
-         * 保持与现有 DownloadManager 的兼容。
-         */
-        DownloadManager.MaxThread = maxConcurrency;
+        _maxRetryCount = Math.Max(1, maxRetryCount);
+        _isEnableFragment =  isEnableFragment;
         
         _globalSemaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         _disposeCts = new CancellationTokenSource();
@@ -242,15 +240,9 @@ public sealed class DefaultDownloader : IDisposable {
         if (totalBytes < 0)
             totalBytes = 0;
 
-        var context = new DownloadContext(
-            preparation.FinalUrl,
-            request.FileInfo.FullName,
-            totalBytes,
-            SegmentSize);
-
-        var shouldUseMultipart =
-            DownloadManager.IsEnableFragment &&
-            totalBytes >= MultipartThreshold;
+        var context = new DownloadContext(preparation.FinalUrl, request.FileInfo.FullName, totalBytes, SegmentSize);
+        var shouldUseMultipart = 
+            _isEnableFragment && totalBytes >= MultipartThreshold;
 
         if (shouldUseMultipart) {
             var supportsRange = preparation.SupportsRanges;

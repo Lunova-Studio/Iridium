@@ -8,9 +8,10 @@ public sealed class DefaultMinecraftProviderFactory : IMinecraftProviderFactory 
 
         if (Directory.Exists(Path.Combine(root.FullName, "instances")))
             return new PrismMinecraftProvider(root);
-
-        return Directory.Exists(Path.Combine(root.FullName, "versions")) 
-            ? new StandardMinecraftProvider(root) 
-            : throw new ArgumentException($"Unrecognized Minecraft directory: {root.FullName}", nameof(root));
+        
+        if (Directory.Exists(Path.Combine(root.FullName, "versions")) || !root.EnumerateFileSystemInfos().Any())
+            return new StandardMinecraftProvider(root);
+        
+        throw new ArgumentException($"Unrecognized Minecraft directory: {root.FullName}", nameof(root));
     }
 }
