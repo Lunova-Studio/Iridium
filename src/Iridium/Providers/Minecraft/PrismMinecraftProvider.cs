@@ -114,7 +114,8 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
             string? minecraftArguments = null;
             var libraries = new List<MinecraftLibrary>();
             var loaderLibraries = new List<MinecraftLibrary>();
-            var seenLibraries = new HashSet<string>(StringComparer.Ordinal);
+            var mavenFiles = new List<MinecraftLibrary>();
+            var seenMavenFiles = new HashSet<string>(StringComparer.Ordinal);
             JsonElement? minecraftRoot = null;
 
             foreach (var (document, uid) in docs.OrderBy(d => GetOrder(d.Document.RootElement))) {
@@ -139,12 +140,21 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
                 if (root.TryGetProperty("libraries", out var librariesElement) && librariesElement.ValueKind == JsonValueKind.Array) {
                     var isLoader = ModLoaderDetector.TryMapComponentUid(uid, out _);
                     foreach (var library in VersionJsonParser.MapLibraries(librariesElement)) {
-                        if (!seenLibraries.Add(library.Name))
-                            continue;
-
-                        libraries.Add(library);
+                        // Prism keeps a single version per artifact (the highest one), so
+                        // e.g. guava 15.0 from vanilla and guava 17.0 from Forge don't both
+                        // end up on the classpath in the wrong order.
+                        AddLibrary(libraries, library);
                         if (isLoader)
-                            loaderLibraries.Add(library);
+                            AddLibrary(loaderLibraries, library);
+                    }
+                }
+
+                // Maven files are downloaded into the shared libraries directory but are not
+                // part of the classpath (Forge installer jar, modlauncher runtime files, ...).
+                if (root.TryGetProperty("mavenFiles", out var mavenFilesElement) && mavenFilesElement.ValueKind == JsonValueKind.Array) {
+                    foreach (var mavenFile in VersionJsonParser.MapLibraries(mavenFilesElement)) {
+                        if (seenMavenFiles.Add(mavenFile.Name))
+                            mavenFiles.Add(mavenFile);
                     }
                 }
             }
@@ -153,6 +163,7 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
                 MainClass = mainClass,
                 MinecraftArguments = minecraftArguments,
                 Libraries = libraries,
+                MavenFiles = mavenFiles,
                 Tweakers = GetInstanceTweakers(dir)
             };
 
@@ -165,12 +176,19 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
             }
 
             if (minecraftRoot is { } minecraftRootElement) {
+                var assetIndexUrl = minecraftRootElement.TryGetProperty("assetIndex", out var assetIndex)
+                    && assetIndex.TryGetProperty("url", out var assetIndexUrlElement)
+                        ? assetIndexUrlElement.GetString()
+                        : null;
+
                 merged = merged with {
-                    AssetIndex = minecraftRootElement.TryGetProperty("assetIndex", out var assetIndex)
-                        && assetIndex.TryGetProperty("id", out var assetId)
+                    Arguments = VersionJsonParser.MapArguments(minecraftRootElement),
+                    AssetIndex = assetIndex.TryGetProperty("id", out var assetId)
                         && assetId.GetString() is { Length: > 0 } assetIndexId
                         ? new AssetIndex(assetIndexId)
                         : merged.AssetIndex,
+                    AssetIndexUrl = assetIndexUrl,
+                    ClientDownload = MapMainJarDownload(minecraftRootElement),
                     Jar = minecraftRootElement.TryGetProperty("mainJar", out var mainJar)
                         && mainJar.TryGetProperty("name", out var mainJarName)
                         ? mainJarName.GetString()
@@ -246,6 +264,26 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
         return 0;
     }
 
+    private static MinecraftFileDownload? MapMainJarDownload(JsonElement root) {
+        if (!root.TryGetProperty("mainJar", out var mainJar) ||
+            mainJar.ValueKind != JsonValueKind.Object ||
+            !mainJar.TryGetProperty("downloads", out var downloads) ||
+            downloads.ValueKind != JsonValueKind.Object ||
+            !downloads.TryGetProperty("artifact", out var artifact) ||
+            artifact.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var url = artifact.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrEmpty(url))
+            return null;
+
+        return new MinecraftFileDownload {
+            Url = url,
+            Size = artifact.TryGetProperty("size", out var sizeElement) ? sizeElement.GetInt64() : 0L,
+            Sha1 = artifact.TryGetProperty("sha1", out var sha1Element) ? sha1Element.GetString() : null
+        };
+    }
+
     private static string GetInstanceName(DirectoryInfo dir) {
         var cfgPath = Path.Combine(dir.FullName, "instance.cfg");
         if (!File.Exists(cfgPath))
@@ -277,5 +315,71 @@ internal sealed class PrismMinecraftProvider : IMinecraftProvider {
         }
 
         return [];
+    }
+
+    /// <summary>
+    /// Adds a library keeping a single version per group:artifact:classifier, replacing an
+    /// existing entry only when the incoming version is higher (mirrors Prism's applyLibrary).
+    /// </summary>
+    private static void AddLibrary(List<MinecraftLibrary> libraries, MinecraftLibrary library) {
+        var key = GetArtifactKey(library.Name);
+        for (var i = 0; i < libraries.Count; i++) {
+            if (!string.Equals(GetArtifactKey(libraries[i].Name), key, StringComparison.Ordinal))
+                continue;
+
+            if (CompareVersions(GetLibraryVersion(library.Name), GetLibraryVersion(libraries[i].Name)) > 0)
+                libraries[i] = library;
+
+            return;
+        }
+
+        libraries.Add(library);
+    }
+
+    private static string GetArtifactKey(string name) {
+        var parts = name.Split(':');
+        if (parts.Length < 2)
+            return name;
+
+        // group:artifact[:classifier] -- natives like lwjgl-...:3.3.1:natives-linux must not
+        // be collapsed into the plain artifact.
+        var key = $"{parts[0]}:{parts[1]}";
+        if (parts.Length >= 4)
+            key += $":{parts[3]}";
+
+        return key;
+    }
+
+    private static string GetLibraryVersion(string name) {
+        var parts = name.Split(':');
+        return parts.Length >= 3 ? parts[2] : string.Empty;
+    }
+
+    private static int CompareVersions(string a, string b) {
+        var aParts = a.Split(['.', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+        var bParts = b.Split(['.', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
+        var count = Math.Max(aParts.Length, bParts.Length);
+
+        for (var i = 0; i < count; i++) {
+            var x = i < aParts.Length ? aParts[i] : string.Empty;
+            var y = i < bParts.Length ? bParts[i] : string.Empty;
+            if (x == y)
+                continue;
+
+            if (int.TryParse(x, out var xi) && int.TryParse(y, out var yi))
+            {
+                var numeric = xi.CompareTo(yi);
+                if (numeric != 0)
+                    return numeric;
+            }
+            else
+            {
+                var ordinal = string.CompareOrdinal(x, y);
+                if (ordinal != 0)
+                    return ordinal;
+            }
+        }
+
+        return 0;
     }
 }

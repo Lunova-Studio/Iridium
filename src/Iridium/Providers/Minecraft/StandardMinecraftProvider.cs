@@ -50,36 +50,13 @@ internal sealed class StandardMinecraftProvider : IMinecraftProvider {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
 
-        var id = root.TryGetProperty("id", out var idElement)
-            ? idElement.GetString()
-            : dir.Name;
-        if (string.IsNullOrWhiteSpace(id))
-            id = dir.Name;
-
-        var libraries = root.TryGetProperty("libraries", out var librariesElement)
-            ? VersionJsonParser.MapLibraries(librariesElement)
-            : [];
-
-        return new MinecraftEntry {
-            Id = id,
-            Name = id,
-            MinecraftVersion = await ResolveVersionAsync(id, root, cancellationToken),
+        var entry = VersionJsonParser.MapEntry(root, dir.Name);
+        return entry with {
+            MinecraftVersion = await ResolveVersionAsync(entry.Id, root, cancellationToken),
             InstancePath = dir.FullName,
             Format = MinecraftFormat.Standard,
-            Loaders = ModLoaderDetector.DetectFromLibraries(librariesElement),
-            MainClass = root.TryGetProperty("mainClass", out var mainClass) ? mainClass.GetString() : null,
-            MinecraftArguments = root.TryGetProperty("minecraftArguments", out var minecraftArguments) ? minecraftArguments.GetString() : null,
-            Arguments = VersionJsonParser.MapArguments(root),
-            Jar = root.TryGetProperty("jar", out var jar) ? jar.GetString() : null,
-            AssetIndex = root.TryGetProperty("assetIndex", out var assetIndex)
-                && assetIndex.TryGetProperty("id", out var assetId)
-                && assetId.GetString() is { Length: > 0 } assetIndexId
-                ? new AssetIndex(assetIndexId)
-                : null,
-            Libraries = libraries,
-            InheritsFrom = root.TryGetProperty("inheritsFrom", out var inheritsFrom) ? inheritsFrom.GetString() : null,
-            Type = VersionJsonParser.MapType(root),
-            ReleaseTime = VersionJsonParser.MapReleaseTime(root)
+            Loaders = ModLoaderDetector.DetectFromLibraries(
+                root.TryGetProperty("libraries", out var librariesElement) ? librariesElement : default)
         };
     }
 

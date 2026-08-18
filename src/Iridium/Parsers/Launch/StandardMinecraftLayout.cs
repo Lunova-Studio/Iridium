@@ -1,3 +1,4 @@
+using Iridium.Enums;
 using Iridium.Helpers;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Minecraft;
@@ -5,6 +6,10 @@ using Iridium.Models.Minecraft;
 namespace Iridium.Parsers.Launch;
 
 public sealed class StandardMinecraftLayout : IMinecraftLayout {
+    public MinecraftFormat Format => MinecraftFormat.Standard;
+
+    public string GetInstanceDirectory(string id) => Path.Combine("versions", id);
+
     public string GetInstanceRoot(MinecraftEntry entry) => GetRoot(entry);
 
     public string GetGameDirectory(MinecraftEntry entry) {
@@ -30,19 +35,11 @@ public sealed class StandardMinecraftLayout : IMinecraftLayout {
         return Path.Combine(GetVersionDirectory(entry), $"{jarName}.jar");
     }
 
-    public string GetGameDirectory(string id) => Path.Combine("versions", id);
-
-    public string GetNativesDirectory(string id) => Path.Combine("versions", id, $"natives-{PlatformHelper.GetPlatformInfo()}");
-
-    public string GetVersionJarPath(string id) => Path.Combine("versions", id, $"{id}.jar");
-
-    public string GetVersionJsonPath(string id) => Path.Combine("versions", id, $"{id}.json");
-
     public string GetVersionJsonPath(MinecraftEntry entry) => Path.Combine(GetRoot(entry), "versions", entry.Id, $"{entry.Id}.json");
 
     private static string GetVersionDirectory(MinecraftEntry entry) {
-        return string.IsNullOrEmpty(entry.InstancePath) 
-            ? entry.InstancePath 
+        return string.IsNullOrEmpty(entry.InstancePath)
+            ? entry.InstancePath
             : Path.GetFullPath(entry.InstancePath);
     }
 

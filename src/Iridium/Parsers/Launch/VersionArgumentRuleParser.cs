@@ -68,4 +68,21 @@ internal static class VersionArgumentRuleParser {
             Architecture.Arm64 => "arm64",
             var architecture => architecture.ToString().ToLowerInvariant()
         };
+
+    public static string? GetNativeClassifier(IReadOnlyDictionary<string, string> natives) {
+        var os = GetCurrentOsName();
+        var archKey = RuntimeInformation.ProcessArchitecture switch {
+            Architecture.Arm64 => $"{os}-arm64",
+            Architecture.Arm => $"{os}-arm32",
+            _ => os
+        };
+
+        if (natives.TryGetValue(archKey, out var classifier))
+            return classifier;
+
+        if (archKey != os && natives.TryGetValue(os, out var fallback))
+            return fallback;
+
+        return null;
+    }
 }

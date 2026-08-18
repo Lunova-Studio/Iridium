@@ -17,7 +17,13 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
     private const string DefaultMainClass = "net.minecraft.client.main.Main";
     private static readonly DateTime QuickPlayFeatureCutoff = new(2023, 4, 4);
 
-    protected virtual IMinecraftLayout CreateLayout(MinecraftEntry entry) => new StandardMinecraftLayout();
+    private readonly IMinecraftLayoutFactory _factory;
+
+    public StandardMinecraftArgumentParser(IMinecraftLayoutFactory? factory = null) {
+        _factory = factory ?? new DefaultMinecraftLayoutFactory();
+    }
+
+    protected virtual IMinecraftLayout CreateLayout(MinecraftEntry entry) => _factory.Create(entry.Format);
 
     public LaunchArguments Build(MinecraftEntry entry, LaunchConfig config) {
         if (config.Account is null)
@@ -307,7 +313,7 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
             if (!VersionArgumentRuleParser.IsActive(library.Rules, features))
                 continue;
 
-            if (GetNativeClassifier(library.Natives) is not { } classifier)
+            if (VersionArgumentRuleParser.GetNativeClassifier(library.Natives) is not { } classifier)
                 continue;
 
             var jarPath = MavenPathParser.Resolve(paths.LibrariesRoot, $"{library.Name}:{classifier}");
@@ -316,23 +322,6 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
         }
 
         return result;
-    }
-
-    private static string? GetNativeClassifier(IReadOnlyDictionary<string, string> natives) {
-        var os = VersionArgumentRuleParser.GetCurrentOsName();
-        var archKey = RuntimeInformation.ProcessArchitecture switch {
-            Architecture.Arm64 => $"{os}-arm64",
-            Architecture.Arm => $"{os}-arm32",
-            _ => os
-        };
-
-        if (natives.TryGetValue(archKey, out var classifier))
-            return classifier;
-
-        if (archKey != os && natives.TryGetValue(os, out var fallback))
-            return fallback;
-
-        return null;
     }
 
     private static string BuildClasspath(IReadOnlyList<string> libraryPaths, string clientJarPath) {
@@ -392,11 +381,17 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
 
 internal static class GameArgumentParser {
     /// <summary>
-    /// Parses the game arguments declared by the version JSON (arguments.game) or the
-    /// legacy whitespace-separated minecraftArguments.
+    /// Parses the game arguments declared by the version JSON. The merged
+    /// <see cref="MinecraftEntry.MinecraftArguments"/> string is authoritative for the
+    /// whole profile: loader components append their own args there (e.g. Forge's
+    /// --launchTarget / --fml.*), and structured <c>arguments.game</c> would drop them.
+    /// Structured arguments are only used when no merged string exists (modern vanilla).
     /// </summary>
     public static IEnumerable<string> Parse(MinecraftEntry entry, Dictionary<string, bool> features) {
-        if (entry.Arguments?.Game is { } versionGame)
+        if (entry.MinecraftArguments is { Length: > 0 } legacyArguments)
+            foreach (var value in legacyArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                yield return value;
+        else if (entry.Arguments?.Game is { } versionGame)
             foreach (var argument in versionGame) {
                 if (!VersionArgumentRuleParser.IsActive(argument.Rules, features))
                     continue;
@@ -404,9 +399,6 @@ internal static class GameArgumentParser {
                 foreach (var value in argument.Values)
                     yield return value;
             }
-        else if (entry.MinecraftArguments is { } legacyArguments)
-            foreach (var value in legacyArguments.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                yield return value;
     }
 }
 

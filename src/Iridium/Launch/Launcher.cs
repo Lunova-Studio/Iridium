@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Iridium.Extensions;
 using Iridium.Interfaces.Launch;
+using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Launch;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Launch;
@@ -8,9 +9,11 @@ using Iridium.Parsers.Launch;
 namespace Iridium.Launch;
 
 public sealed class Launcher {
+    private readonly IMinecraftLayoutFactory _factory;
     private readonly IMinecraftArgumentParser? _resolver;
 
-    public Launcher(IMinecraftArgumentParser? resolver = null) {
+    public Launcher(IMinecraftLayoutFactory? factory = null, IMinecraftArgumentParser? resolver = null) {
+        _factory = factory ?? new DefaultMinecraftLayoutFactory();
         _resolver = resolver;
     }
 
@@ -20,13 +23,13 @@ public sealed class Launcher {
         if (config.JavaPath is null)
             throw new InvalidOperationException("JavaPath is required");
 
-        var resolver = _resolver ?? MinecraftArgumentParserFactory.Create(entry);
+        var layout = _factory.Create(entry.Format);
+        var resolver = _resolver ?? new StandardMinecraftArgumentParser(_factory);
         var arguments = resolver.Build(entry, config);
-        var directories = LaunchDirectories.Resolve(
-            MinecraftLayoutFactory.Create(entry), entry, config);
+        var directories = LaunchDirectories.Resolve(layout, entry, config);
 
         if (arguments.Natives.Count > 0)
-            await entry.ExtractNativesAsync(arguments.Natives, directories.NativesDirectory, cancellationToken);
+            await entry.ExtractNativesAsync(arguments.Natives, directories.NativesDirectory, cancellationToken: cancellationToken);
 
         List<string> launchArgs = [.. arguments.JvmArguments, arguments.MainClass, .. arguments.GameArguments];
         var startInfo = new ProcessStartInfo(config.JavaPath.JavaPath) {

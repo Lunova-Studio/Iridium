@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Launch;
 
@@ -12,9 +13,10 @@ public static class MinecraftEntryExtensions {
     public static Task ExtractNativesAsync(this MinecraftEntry entry,
         IReadOnlyList<string> nativeJars,
         string? nativesDirectory = null,
+        IMinecraftLayoutFactory? factory = null,
         CancellationToken cancellationToken = default) {
         var directory = nativesDirectory
-            ?? MinecraftLayoutFactory.Create(entry).GetNativesDirectory(entry);
+            ?? (factory ?? new DefaultMinecraftLayoutFactory()).Create(entry.Format).GetNativesDirectory(entry);
 
         if (nativeJars.Count == 0)
             return Task.CompletedTask;

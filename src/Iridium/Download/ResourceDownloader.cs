@@ -10,6 +10,7 @@ namespace Iridium.Download;
 
 public sealed class ResourceDownloader : IDisposable {
     private readonly DownloadSource _source;
+    private readonly IMinecraftLayoutFactory _factory;
     private readonly IMinecraftLayout? _layout;
     private readonly DefaultDownloader _downloader;
     private readonly Action<ResourceDownloadProgressChangedEventArgs> _forwardProgress;
@@ -18,10 +19,11 @@ public sealed class ResourceDownloader : IDisposable {
     
     public event EventHandler<ResourceDownloadProgressChangedEventArgs>? ProgressChanged;
     
-    public ResourceDownloader(DownloadSource source, int maxConcurrency = 4, IMinecraftLayout? layout = null) {
+    public ResourceDownloader(DownloadSource source, int maxConcurrency = 4, IMinecraftLayoutFactory? factory = null, IMinecraftLayout? layout = null) {
         ArgumentNullException.ThrowIfNull(source);
 
         _source = source;
+        _factory = factory ?? new DefaultMinecraftLayoutFactory();
         _layout = layout;
         _forwardProgress = ForwardProgress;
         _downloader = new DefaultDownloader(maxConcurrency);
@@ -31,9 +33,8 @@ public sealed class ResourceDownloader : IDisposable {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(entry);
 
-        var layout = _layout ?? MinecraftLayoutFactory.Create(entry);
-        var files = await ResolveFilesAsync(entry, layout, cancellationToken)
-            .ConfigureAwait(false);
+        var layout = _layout ?? _factory.Create(entry.Format);
+        var files = ResolveFiles(entry, layout);
 
         DownloadFileEntry? assetIndex = null;
         var assetIndexPos = -1;
@@ -127,61 +128,35 @@ public sealed class ResourceDownloader : IDisposable {
             .ConfigureAwait(false);
     }
 
-    private async Task<List<DownloadFileEntry>> ResolveFilesAsync(
+    private List<DownloadFileEntry> ResolveFiles(
         MinecraftEntry entry,
-        IMinecraftLayout layout,
-        CancellationToken cancellationToken) {
+        IMinecraftLayout layout) {
         var files = new List<DownloadFileEntry>(entry.Libraries.Count + 64);
         var librariesRoot = layout.GetLibrariesRoot(entry);
         var assetsRoot = layout.GetAssetsRoot(entry);
 
-        var versionJsonPath = layout.GetVersionJsonPath(entry);
-
-        if (!File.Exists(versionJsonPath))
-            throw new InvalidOperationException(
-                $"Version JSON not found: {versionJsonPath}");
-
-        await using var versionStream = new FileStream(
-            versionJsonPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            64 * 1024,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-        using var versionDoc = await JsonDocument.ParseAsync(versionStream, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-
-        var versionRoot = versionDoc.RootElement;
         var versionJarPath = layout.GetVersionJarPath(entry);
 
-        if (!File.Exists(versionJarPath)) {
-            var fileEntry = new DownloadFileEntry {
+        if (!File.Exists(versionJarPath) && entry.ClientDownload is { Url.Length: > 0 } client) {
+            files.Add(new DownloadFileEntry {
                 Type = DownloadFileType.ClientJar,
                 LocalPath = versionJarPath,
+                Url = client.Url,
+                Size = client.Size,
+                Sha1 = client.Sha1,
                 VersionId = entry.Id
-            };
-
-            if (versionRoot.TryGetProperty("downloads", out var downloads) &&
-                downloads.TryGetProperty("client", out var client) &&
-                client.TryGetProperty("url", out var urlElement)) {
-                fileEntry.Url = urlElement.GetString()!;
-
-                fileEntry.Size = client.TryGetProperty("size", out var sizeElement) 
-                    ? sizeElement.GetInt64() 
-                    : 0L;
-            }
-
-            files.Add(fileEntry);
+            });
         }
 
-        foreach (var library in entry.Libraries) {
-            var mavenPath = MavenPathParser.Resolve(librariesRoot, library.Name);
+        foreach (var library in EnumerateLibraries(entry)) {
+            if (library.Natives is { Count: > 0 } natives) {
+                AddNativeLibraryDownload(files, librariesRoot, library, natives);
+                continue;
+            }
+
+            var mavenPath = ResolveLibraryPath(librariesRoot, library);
 
             if (mavenPath is null || File.Exists(mavenPath))
-                continue;
-
-            if (library.Natives is { Count: > 0 })
                 continue;
 
             if (!VersionArgumentRuleParser.IsActive(library.Rules, []))
@@ -199,25 +174,20 @@ public sealed class ResourceDownloader : IDisposable {
             files.Add(new DownloadFileEntry {
                 Type = DownloadFileType.Library,
                 LocalPath = mavenPath,
-                Url = _source.GetUrl(libEntry)
+                Url = ResolveLibraryUrl(library.Url, libEntry)
             });
         }
 
         var assetIndexId = entry.AssetIndex?.Id ?? entry.Id;
         var assetIndexPath = Path.Combine(assetsRoot, "indexes", $"{assetIndexId}.json");
 
-        if (!File.Exists(assetIndexPath)) {
-            var fileEntry = new DownloadFileEntry {
+        if (!File.Exists(assetIndexPath) && entry.AssetIndexUrl is { Length: > 0 } url) {
+            files.Add(new DownloadFileEntry {
                 Type = DownloadFileType.AssetIndex,
                 LocalPath = assetIndexPath,
+                Url = url,
                 VersionId = assetIndexId
-            };
-
-            if (versionRoot.TryGetProperty("assetIndex", out var assetIndex) &&
-                assetIndex.TryGetProperty("url", out var urlElement)) 
-                fileEntry.Url = urlElement.GetString()!;
-
-            files.Add(fileEntry);
+            });
         }
 
         return files;
@@ -233,4 +203,79 @@ public sealed class ResourceDownloader : IDisposable {
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
     
     private void ForwardProgress(ResourceDownloadProgressChangedEventArgs args) => ProgressChanged?.Invoke(this, args);
+
+    private static IEnumerable<MinecraftLibrary> EnumerateLibraries(MinecraftEntry entry) {
+        foreach (var library in entry.Libraries)
+            yield return library;
+
+        foreach (var mavenFile in entry.MavenFiles)
+            yield return mavenFile;
+    }
+
+    private void AddNativeLibraryDownload(
+        List<DownloadFileEntry> files,
+        string librariesRoot,
+        MinecraftLibrary library,
+        IReadOnlyDictionary<string, string> natives) {
+        if (!VersionArgumentRuleParser.IsActive(library.Rules, []))
+            return;
+
+        if (VersionArgumentRuleParser.GetNativeClassifier(natives) is not { } classifier)
+            return;
+
+        // The metadata only ships natives for the platforms it declares (e.g. twitch is
+        // Windows/macOS only), so don't invent a download for an undeclared classifier.
+        if (library.ClassifierUrls is not null && !library.ClassifierUrls.ContainsKey(classifier))
+            return;
+
+        var nativeName = $"{library.Name}:{classifier}";
+        var nativePath = MavenPathParser.Resolve(librariesRoot, nativeName);
+        if (nativePath is null || File.Exists(nativePath))
+            return;
+
+        var relativePath = Path
+            .GetRelativePath(librariesRoot, nativePath)
+            .Replace(Path.DirectorySeparatorChar, '/');
+
+        var libEntry = new DownloadFileEntry {
+            Type = DownloadFileType.Library,
+            LibraryPath = relativePath
+        };
+
+        var classifierUrl = library.ClassifierUrls is not null &&
+            library.ClassifierUrls.TryGetValue(classifier, out var url)
+                ? url
+                : null;
+
+        files.Add(new DownloadFileEntry {
+            Type = DownloadFileType.Library,
+            LocalPath = nativePath,
+            Url = ResolveLibraryUrl(classifierUrl, libEntry)
+        });
+    }
+
+    private static string? ResolveLibraryPath(string librariesRoot, MinecraftLibrary library) {
+        if (library.Path is { Length: > 0 } relative)
+            return Path.Combine(librariesRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+
+        return MavenPathParser.Resolve(librariesRoot, library.Name);
+    }
+
+    private string ResolveLibraryUrl(string? metadataUrl, DownloadFileEntry file) {
+        // Third-party metadata (Forge etc.) pins its own download host; use it verbatim.
+        // Mojang-hosted artifacts keep flowing through the DownloadSource so mirrors
+        // (BmclApi) can rewrite them.
+        if (metadataUrl is { Length: > 0 } && !IsMojangHosted(metadataUrl))
+            return metadataUrl;
+
+        return _source.GetUrl(file);
+    }
+
+    private static bool IsMojangHosted(string url) {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        return uri.Host is "libraries.minecraft.net" or "resources.download.minecraft.net"
+            || uri.Host.EndsWith(".mojang.com", StringComparison.Ordinal);
+    }
 }

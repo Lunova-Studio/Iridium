@@ -34,6 +34,64 @@ internal static class VersionJsonParser {
         return DateTime.TryParse(value, out var parsed) ? parsed : null;
     }
 
+    public static MinecraftEntry MapEntry(JsonElement root, string fallbackId) {
+        var id = root.TryGetProperty("id", out var idElement) && idElement.GetString() is { Length: > 0 } value
+            ? value
+            : fallbackId;
+
+        var libraries = root.TryGetProperty("libraries", out var librariesElement)
+            ? MapLibraries(librariesElement)
+            : [];
+
+        var (assetId, assetUrl) = MapAssetIndex(root);
+
+        return new MinecraftEntry {
+            Id = id,
+            Name = id,
+            MainClass = root.TryGetProperty("mainClass", out var mainClass) ? mainClass.GetString() : null,
+            MinecraftArguments = root.TryGetProperty("minecraftArguments", out var minecraftArguments) ? minecraftArguments.GetString() : null,
+            Arguments = MapArguments(root),
+            Jar = root.TryGetProperty("jar", out var jar) ? jar.GetString() : null,
+            AssetIndex = assetId,
+            AssetIndexUrl = assetUrl,
+            ClientDownload = MapClientDownload(root),
+            Libraries = libraries,
+            InheritsFrom = root.TryGetProperty("inheritsFrom", out var inheritsFrom) ? inheritsFrom.GetString() : null,
+            Type = MapType(root),
+            ReleaseTime = MapReleaseTime(root)
+        };
+    }
+
+    private static (AssetIndex? Id, string? Url) MapAssetIndex(JsonElement root) {
+        if (!root.TryGetProperty("assetIndex", out var assetIndex) || assetIndex.ValueKind != JsonValueKind.Object)
+            return (null, null);
+
+        AssetIndex? id = null;
+        if (assetIndex.TryGetProperty("id", out var assetId) && assetId.GetString() is { Length: > 0 } assetIndexId)
+            id = new AssetIndex(assetIndexId);
+
+        var url = assetIndex.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        return (id, url);
+    }
+
+    private static MinecraftFileDownload? MapClientDownload(JsonElement root) {
+        if (!root.TryGetProperty("downloads", out var downloads) ||
+            downloads.ValueKind != JsonValueKind.Object ||
+            !downloads.TryGetProperty("client", out var client) ||
+            client.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var url = client.TryGetProperty("url", out var urlElement) ? urlElement.GetString() : null;
+        if (string.IsNullOrEmpty(url))
+            return null;
+
+        return new MinecraftFileDownload {
+            Url = url,
+            Size = client.TryGetProperty("size", out var sizeElement) ? sizeElement.GetInt64() : 0L,
+            Sha1 = client.TryGetProperty("sha1", out var sha1Element) ? sha1Element.GetString() : null
+        };
+    }
+
     public static IReadOnlyList<MinecraftLibrary> MapLibraries(JsonElement libraries) {
             if (libraries.ValueKind != JsonValueKind.Array)
                 return [];
@@ -45,9 +103,14 @@ internal static class VersionJsonParser {
             foreach (var library in enumerable) {
                 if (!library.TryGetProperty("name", out var nameElement) || nameElement.GetString() is not { Length: > 0 } name)
                     continue;
-    
+
+                var (url, path) = MapArtifact(library);
+
                 result.Add(new MinecraftLibrary {
                     Name = name,
+                    Url = url,
+                    Path = path,
+                    ClassifierUrls = MapClassifiers(library),
                     Rules = MapRules(library),
                     Natives = MapNatives(library)
                 });
@@ -55,6 +118,59 @@ internal static class VersionJsonParser {
     
             return result;
         }
+
+    private static (string? Url, string? Path) MapArtifact(JsonElement element) {
+        if (element.TryGetProperty("downloads", out var downloads) &&
+            downloads.ValueKind == JsonValueKind.Object &&
+            downloads.TryGetProperty("artifact", out var artifact) &&
+            artifact.ValueKind == JsonValueKind.Object)
+        {
+            var url = artifact.TryGetProperty("url", out var urlElement)
+                ? urlElement.GetString()
+                : null;
+
+            var path = artifact.TryGetProperty("path", out var pathElement)
+                ? pathElement.GetString()
+                : null;
+
+            return (url, path);
+        }
+
+        // Legacy metas (Forge 1.7.10 etc.) put a repository base on the library itself
+        // instead of downloads.artifact; the artifact then lives at <url><maven-path>.
+        if (element.TryGetProperty("url", out var baseUrlElement) &&
+            baseUrlElement.GetString() is { Length: > 0 } baseUrl &&
+            element.TryGetProperty("name", out var nameElement) &&
+            nameElement.GetString() is { Length: > 0 } name &&
+            MavenPathParser.GetRelativePath(name) is { } relative)
+        {
+            return (JoinUrl(baseUrl, relative), relative);
+        }
+
+        return (null, null);
+    }
+
+    private static Dictionary<string, string>? MapClassifiers(JsonElement element) {
+        if (!element.TryGetProperty("downloads", out var downloads) ||
+            downloads.ValueKind != JsonValueKind.Object ||
+            !downloads.TryGetProperty("classifiers", out var classifiers) ||
+            classifiers.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var classifier in classifiers.EnumerateObject()) {
+            if (classifier.Value.TryGetProperty("url", out var urlElement) &&
+                urlElement.GetString() is { Length: > 0 } url)
+                result[classifier.Name] = url;
+        }
+
+        return result.Count > 0 ? result : null;
+    }
+
+    private static string JoinUrl(string baseUrl, string relativePath) {
+        var normalized = baseUrl.EndsWith('/') ? baseUrl : baseUrl + "/";
+        return normalized + relativePath;
+    }
     
     public static IReadOnlyList<string> MapTweakers(JsonElement root) {
         if (!root.TryGetProperty("tweakers", out var tweakers) || tweakers.ValueKind != JsonValueKind.Array)

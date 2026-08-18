@@ -11,9 +11,17 @@ public sealed record MinecraftEntry {
     public MinecraftFormat Format { get; init; }
 
     public AssetIndex? AssetIndex { get; init; }
+    public string? AssetIndexUrl { get; init; }
+    public MinecraftFileDownload? ClientDownload { get; init; }
     public MinecraftArguments? Arguments { get; init; }
     public IReadOnlyList<MinecraftLoader> Loaders { get; init; } = [];
     public IReadOnlyList<MinecraftLibrary> Libraries { get; init; } = [];
+
+    /// <summary>
+    /// Files that are stored in the shared libraries directory but never placed on the
+    /// classpath (e.g. the Forge installer jar, modlauncher runtime files).
+    /// </summary>
+    public IReadOnlyList<MinecraftLibrary> MavenFiles { get; init; } = [];
 
     public string? Jar { get; init; }
     public string? MainClass { get; init; }

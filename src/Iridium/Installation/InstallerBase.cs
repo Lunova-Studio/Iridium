@@ -1,6 +1,4 @@
 using Iridium.Interfaces.Installation;
-using Iridium.Interfaces.Minecraft;
-using Iridium.Models.Download;
 using Iridium.Models.Installation;
 
 namespace Iridium.Installation;
@@ -9,9 +7,7 @@ public abstract class InstallerBase : IInstaller {
     public event EventHandler<InstallProgressChangedEventArgs>? ProgressChanged;
     public event EventHandler<InstallerCompletedEventArgs>? Completed;
 
-    // public abstract string MinecraftFolder { get; }
-
-    public abstract Task<DownloadResponse> InstallAsync(VersionManifestEntry id, IMinecraftLayout layout, CancellationToken cancellationToken = default);
+    public abstract Task<MinecraftInstallResult> InstallAsync(VersionManifestEntry id, CancellationToken cancellationToken = default);
 
     protected void ReportProgress(IReadOnlyList<string> stepNames, int completedSteps, int currentStepIndex, double currentStepProgress) {
         var totalSteps = stepNames.Count;
