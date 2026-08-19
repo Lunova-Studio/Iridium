@@ -1,4 +1,5 @@
 using Iridium.Download;
+using Iridium.Installation;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Authentication;
 using Iridium.Models.Java;

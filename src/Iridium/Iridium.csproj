@@ -12,7 +12,6 @@
       <Folder Include="Models\Download\" />
       <Folder Include="Networking\" />
       <Folder Include="Interfaces\Installation\" />
-      <Folder Include="Installation\" />
     </ItemGroup>
 
     <ItemGroup>
