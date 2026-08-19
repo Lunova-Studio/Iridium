@@ -8,12 +8,6 @@ using Microsoft.Win32.SafeHandles;
 
 namespace Iridium.Download;
 
-// internal static class DownloadManager {
-//     public static int MaxThread { get; set; } = 128;
-//     public static int MaxRetryCount { get; set; } = 3;
-//     public static bool IsEnableFragment { get; set; } = true;
-// }
-
 public sealed class DefaultDownloader : IDisposable {
     private const long MultipartThreshold = 16L * 1024 * 1024;
     private const long SegmentSize = 8L * 1024 * 1024;

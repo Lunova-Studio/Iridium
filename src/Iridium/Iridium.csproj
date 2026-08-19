@@ -10,8 +10,6 @@
 
     <ItemGroup>
       <Folder Include="Models\Download\" />
-      <Folder Include="Models\Installation\" />
-      <Folder Include="Models\Instance\" />
       <Folder Include="Networking\" />
       <Folder Include="Interfaces\Installation\" />
       <Folder Include="Installation\" />

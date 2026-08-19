@@ -6,5 +6,5 @@ public interface IInstaller {
     event EventHandler<InstallerCompletedEventArgs>? Completed;
     event EventHandler<InstallProgressChangedEventArgs>? ProgressChanged;
     
-    Task<MinecraftInstallResult> InstallAsync(VersionManifestEntry id, CancellationToken cancellationToken = default);
+    Task<MinecraftInstallResult> InstallAsync(CancellationToken cancellationToken = default);
 }

@@ -3,6 +3,7 @@ using Flurl.Http;
 using Iridium.Download;
 using Iridium.Enums;
 using Iridium.Interfaces.Minecraft;
+using Iridium.Models.Download;
 using Iridium.Models.Installation;
 using Iridium.Models.Minecraft;
 using Iridium.Parsers.Launch;
@@ -12,26 +13,43 @@ namespace Iridium.Installation;
 
 public sealed class VanillaInstaller : InstallerBase {
     private const string VersionManifestUrl = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
-    private static readonly string[] InstallSteps = [
-        "Download version JSON",
-        "Parse version JSON",
-        "Download asset index",
-        "Download game resources"];
+
+    private const int DownloadVersionStep = 0;
+    private const int ParseVersionStep = 1;
+    private const int DownloadResourcesStep = 2;
 
     private readonly DirectoryInfo _root;
     private readonly DownloadSource _source;
     private readonly IMinecraftLayout _layout;
+    private readonly VersionManifestEntry _versionManifestEntry;
+
     private readonly int _maxConcurrency;
 
-    public VanillaInstaller(DirectoryInfo root, DownloadSource source,
-        MinecraftFormat? format = null, IMinecraftLayoutFactory? factory = null, int maxConcurrency = 32) {
-        ArgumentNullException.ThrowIfNull(root);
-        ArgumentNullException.ThrowIfNull(source);
+    protected override StepInfo[] Steps { get; } = [
+        new("Download version JSON", 0.05d),
+        new("Parse version JSON", 0.4d),
+        new("Download game resources", 0.40d)
+    ];
 
+    public VanillaInstaller(
+        DirectoryInfo root,
+        VersionManifestEntry entry,
+        DownloadSource? source = null,
+        MinecraftFormat? format = null,
+        IMinecraftLayoutFactory? factory = null,
+        int maxConcurrency = 32) {
+        ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(entry);
+        
         _root = root;
-        _source = source;
-        _maxConcurrency = maxConcurrency;
-        _layout = (factory ?? new DefaultMinecraftLayoutFactory()).Create(format ?? MinecraftFormat.Standard);
+        _versionManifestEntry = entry;
+        _maxConcurrency = Math.Max(1, maxConcurrency);
+
+        _source = source ?? DownloadSource.Official;
+        _layout = (factory ?? new DefaultMinecraftLayoutFactory())
+            .Create(format ?? MinecraftFormat.Standard);
+
+        InitializeProgress();
     }
 
     public static async Task<IEnumerable<VersionManifestEntry>?> EnumerableMinecraftAsync(CancellationToken cancellationToken = default) {
@@ -39,62 +57,69 @@ public sealed class VanillaInstaller : InstallerBase {
             .GetStreamAsync(HttpCompletionOption.ResponseContentRead, cancellationToken)
             .ConfigureAwait(false);
 
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var versions = doc.RootElement.GetProperty("versions");
 
-        var result = versions.Deserialize<IEnumerable<VersionManifestEntry>>(
-            VersionManifestEntryContext.Default.IEnumerableVersionManifestEntry);
-
-        return result;
+        return document.RootElement
+            .GetProperty("versions")
+            .Deserialize<IEnumerable<VersionManifestEntry>>(
+                VersionManifestEntryContext.Default.IEnumerableVersionManifestEntry);
     }
 
-    public override async Task<MinecraftInstallResult> InstallAsync(VersionManifestEntry id, CancellationToken cancellationToken = default) {
-        ArgumentNullException.ThrowIfNull(id);
-
+    public override async Task<MinecraftInstallResult> InstallAsync(CancellationToken cancellationToken = default) {
         try {
-            ReportProgress(InstallSteps, 0, 0, 0);
+            var instancePath = Path.Combine(_root.FullName, _layout.GetInstanceDirectory(_versionManifestEntry.Id));
+            var seed = new MinecraftEntry {
+                Id = _versionManifestEntry.Id,
+                InstancePath = instancePath
+            };
 
-            var instancePath = Path.Combine(_root.FullName, _layout.GetInstanceDirectory(id.Id));
-            var seed = new MinecraftEntry { Id = id.Id, InstancePath = instancePath };
-
-            var versionJsonPath = await DownloadVersionJsonAsync(id.Url, _layout.GetVersionJsonPath(seed), cancellationToken)
+            var versionJsonPath = await DownloadVersionJsonAsync(_versionManifestEntry.Url, _layout
+                    .GetVersionJsonPath(seed), 
+                    cancellationToken)
                 .ConfigureAwait(false);
 
-            var entry = await ParseVersionAsync(versionJsonPath, seed, cancellationToken)
+            CompleteStep(DownloadVersionStep);
+
+            var entry = await ParseVersionAsync(seed, versionJsonPath, cancellationToken)
                 .ConfigureAwait(false);
 
-            await CompleteDependenciesAsync(entry, cancellationToken).ConfigureAwait(false);
+            CompleteStep(ParseVersionStep);
 
+            await CompleteDependenciesAsync(entry, cancellationToken)
+                .ConfigureAwait(false);
+
+            CompleteStep(DownloadResourcesStep);
             ReportCompleted(true);
+
             return new MinecraftInstallResult {
                 Entry = entry,
                 VersionJsonPath = versionJsonPath.FullName,
                 ClientJarPath = _layout.GetVersionJarPath(entry)
             };
-        } catch (OperationCanceledException) {
+        }
+        catch (OperationCanceledException) {
             ReportCompleted(false);
             throw;
-        } catch (Exception ex) {
-            ReportCompleted(false, ex);
+        }
+        catch (Exception exception) {
+            ReportCompleted(false, exception);
             throw;
         }
     }
 
     private async Task<FileInfo> DownloadVersionJsonAsync(string url, string jsonPath, CancellationToken cancellationToken) {
         cancellationToken.ThrowIfCancellationRequested();
-        ReportProgress(InstallSteps, 0, 0, 0.15);
+        UpdateStep(DownloadVersionStep, 0, 1);
 
-        await using var jsonStream = await url
+        await using var input = await url
             .GetStreamAsync(HttpCompletionOption.ResponseContentRead, cancellationToken)
             .ConfigureAwait(false);
 
         var jsonFile = new FileInfo(jsonPath);
-        if (!jsonFile.Directory!.Exists)
-            jsonFile.Directory.Create();
 
-        // FileMode.Create truncates an existing file; OpenWrite() would leave stale
-        // trailing bytes behind on re-download and corrupt the JSON.
+        jsonFile.Directory?.Create();
+
         await using var output = new FileStream(
             jsonFile.FullName,
             FileMode.Create,
@@ -102,15 +127,20 @@ public sealed class VanillaInstaller : InstallerBase {
             FileShare.Read,
             64 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await jsonStream.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
 
-        ReportProgress(InstallSteps, 0, 0, 0.3);
+        await input.CopyToAsync(output, cancellationToken)
+            .ConfigureAwait(false);
+
         return jsonFile;
     }
 
-    private async Task<MinecraftEntry> ParseVersionAsync(FileInfo versionJsonPath, MinecraftEntry seed, CancellationToken cancellationToken) {
+    private async Task<MinecraftEntry> ParseVersionAsync(
+        MinecraftEntry seed,
+        FileInfo versionJsonPath,
+        CancellationToken cancellationToken) {
         cancellationToken.ThrowIfCancellationRequested();
-        ReportProgress(InstallSteps, 1, 1, 0.4);
+
+        UpdateStep(ParseVersionStep, 0, 1);
 
         await using var stream = new FileStream(
             versionJsonPath.FullName,
@@ -119,10 +149,12 @@ public sealed class VanillaInstaller : InstallerBase {
             FileShare.Read,
             64 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
+
+        using var document = await JsonDocument.ParseAsync(stream, default, cancellationToken)
             .ConfigureAwait(false);
 
         var entry = VersionJsonParser.MapEntry(document.RootElement, seed.Id);
+        
         return entry with {
             InstancePath = seed.InstancePath,
             MinecraftVersion = seed.Id,
@@ -130,19 +162,28 @@ public sealed class VanillaInstaller : InstallerBase {
         };
     }
 
-    private async Task CompleteDependenciesAsync(MinecraftEntry entry, CancellationToken cancellationToken) {
+    private async Task CompleteDependenciesAsync(
+        MinecraftEntry entry,
+        CancellationToken cancellationToken) {
         cancellationToken.ThrowIfCancellationRequested();
-        ReportProgress(InstallSteps, 3, 3, 0.5);
 
         using var resourceDownloader = new ResourceDownloader(_source, _maxConcurrency, layout: _layout);
-        resourceDownloader.ProgressChanged += (_, args) => {
-            var stepProgress = args.TotalCount > 0 ? 0.5 + args.CompletedCount / (double)args.TotalCount * 0.5 : 0.5;
-            ReportProgress(InstallSteps, 3, 3, stepProgress);
-        };
+        resourceDownloader.ProgressChanged += OnResourceDownloadProgressChanged;
 
-        var result = await resourceDownloader.DownloadAsync(entry, cancellationToken).ConfigureAwait(false);
+        try {
+            var result = await resourceDownloader
+                .DownloadAsync(entry, cancellationToken)
+                .ConfigureAwait(false);
 
-        if (result.FailCount > 0)
-            throw new InvalidOperationException("Some dependent files encountered errors during download. FailCount: " + result.FailCount);
+            if (result.FailCount > 0)
+                throw new InvalidOperationException(
+                    $"Some dependent files encountered errors during download. FailCount: {result.FailCount}");
+        }
+        finally {
+            resourceDownloader.ProgressChanged -= OnResourceDownloadProgressChanged;
+        }
     }
+
+    private void OnResourceDownloadProgressChanged(object? sender, ResourceDownloadProgressChangedEventArgs args) => 
+        UpdateStep(DownloadResourcesStep, args.CompletedCount, args.TotalCount);
 }
