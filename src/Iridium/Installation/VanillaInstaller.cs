@@ -89,6 +89,12 @@ public sealed class VanillaInstaller : InstallerBase {
             await CompleteDependenciesAsync(entry, cancellationToken)
                 .ConfigureAwait(false);
 
+            // Deploy the un-hashed asset layout so that pre-1.6 versions get their
+            // resources/ folder (sounds) and 1.6+ versions get assets/virtual/<id>.
+            await new AssetsReconstructor(_layout)
+                .ReconstructAsync(entry, _layout.GetGameDirectory(entry), cancellationToken)
+                .ConfigureAwait(false);
+
             CompleteStep(DownloadResourcesStep);
             ReportCompleted(true);
 

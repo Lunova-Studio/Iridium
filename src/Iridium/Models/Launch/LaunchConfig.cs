@@ -1,3 +1,4 @@
+using Iridium.Download;
 using Iridium.Interfaces.Minecraft;
 using Iridium.Models.Authentication;
 using Iridium.Models.Java;
@@ -44,7 +45,7 @@ internal sealed class LaunchDirectories {
             InstanceRoot = layout.GetInstanceRoot(entry),
             VersionJarPath = layout.GetVersionJarPath(entry),
             LibrariesRoot = layout.GetLibrariesRoot(entry),
-            AssetsRoot = layout.GetAssetsRoot(entry),
+            AssetsRoot = new AssetsReconstructor(layout).ResolveActualAssetsRoot(entry),
             NativesDirectory = string.IsNullOrEmpty(config.NativesFolder)
                 ? layout.GetNativesDirectory(entry)
                 : config.NativesFolder,

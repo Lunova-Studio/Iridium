@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Iridium.Download;
 using Iridium.Extensions;
 using Iridium.Interfaces.Launch;
 using Iridium.Interfaces.Minecraft;
@@ -24,9 +25,17 @@ public sealed class Launcher {
             throw new InvalidOperationException("JavaPath is required");
 
         var layout = _factory.Create(entry.Format);
+        var directories = LaunchDirectories.Resolve(layout, entry, config);
+
+        // Deploy the un-hashed ("virtual") asset layout before the argument parser resolves
+        // ${game_assets}/${assets_root}. For pre-1.6 indexes this also populates the game
+        // directory's resources/ folder, which is where those versions load sounds from.
+        await new AssetsReconstructor(layout)
+            .ReconstructAsync(entry, directories.GameDirectory, cancellationToken)
+            .ConfigureAwait(false);
+
         var resolver = _resolver ?? new StandardMinecraftArgumentParser(_factory);
         var arguments = resolver.Build(entry, config);
-        var directories = LaunchDirectories.Resolve(layout, entry, config);
 
         if (arguments.Natives.Count > 0)
             await entry.ExtractNativesAsync(arguments.Natives, directories.NativesDirectory, cancellationToken: cancellationToken);
