@@ -264,7 +264,7 @@ public partial class StandardMinecraftArgumentParser : IMinecraftArgumentParser 
             ["user_type"] = account.Type == AccountType.Microsoft ? "msa" : "mojang",
             ["user_properties"] = "{}",
             ["version_name"] = entry.Id,
-            ["version_type"] = GetVersionType(entry),
+            ["version_type"] = config.LauncherName ?? GetVersionType(entry),
             ["game_assets"] = paths.AssetsRoot,
             ["assets_root"] = paths.AssetsRoot,
             ["game_directory"] = paths.GameDirectory,
