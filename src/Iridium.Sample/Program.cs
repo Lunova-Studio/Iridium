@@ -10,8 +10,8 @@ using Iridium.Services.Authentication;
 
 IridiumConfig.Configure(new IridiumContext());
 
-Console.Write("Enter .minecraft folder path: ");
-var mcPath = Console.ReadLine();
+// Console.Write("Enter .minecraft folder path: ");
+var mcPath = @"D:\Temp\新建文件夹 (9)";
 
 Console.Write("Enter Minecraft version ID: ");
 var versionId = Console.ReadLine();

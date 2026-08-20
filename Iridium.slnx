@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/test/">
     <Project Path="src/Iridium.Sample/Iridium.Sample.csproj" />
+    <Project Path="src/Iridium.ResourceSample/Iridium.ResourceSample.csproj" />
   </Folder>
   <Project Path="src/Iridium/Iridium.csproj" />
 </Solution>
