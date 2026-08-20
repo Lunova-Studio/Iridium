@@ -1,15 +1,42 @@
 ﻿using System.Diagnostics;
 using Iridium;
 using Iridium.Download;
+using Iridium.Helpers;
 using Iridium.Installation;
 using Iridium.Launch;
 using Iridium.Models;
 using Iridium.Models.Launch;
-using Iridium.Providers;
+using Iridium.Providers.Java;
 using Iridium.Services.Authentication;
 
 IridiumConfig.Configure(new IridiumContext());
 
+Stopwatch stopwatch = Stopwatch.StartNew();
+
+var provider = new JavaProvider();
+
+// Console.WriteLine("Fast scan java:");
+//
+// var r = FastJavaScanner.Scan()
+//     .Distinct();
+//
+// foreach (var entry in r)
+//     Console.WriteLine(entry);
+
+
+//
+// Console.WriteLine();
+Console.WriteLine("Full scan java:");
+
+var asyncJava = provider.EnumerableJavaAsync(true);
+
+await foreach (var java in asyncJava)
+    Console.WriteLine(java);
+
+stopwatch.Stop();
+Console.WriteLine(stopwatch.Elapsed);
+
+return;
 // Console.Write("Enter .minecraft folder path: ");
 var mcPath = @"D:\Temp\新建文件夹 (9)";
 
